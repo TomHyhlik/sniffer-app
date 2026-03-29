@@ -585,7 +585,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         final entry    = sorted[i];
         final vendorId = vendorIds[entry.key];
         return Padding(
-          padding: const EdgeInsets.only(left: 16, right: 24, top: 10, bottom: 10),
+          padding: const EdgeInsets.only(left: 16, right: 24, top: 9, bottom: 9),
           child: Row(
             children: [
               // Company logo
