@@ -461,7 +461,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -561,6 +561,58 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           style: const TextStyle(color: Colors.grey),
         ),
       );
+
+  Widget _buildVendorsTab(List<BleDevice> devices) {
+    if (devices.isEmpty) return _buildEmptyState();
+
+    final counts = <int?, int>{};
+    for (final d in devices) {
+      counts[d.vendorId] = (counts[d.vendorId] ?? 0) + 1;
+    }
+
+    final sorted = counts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    return ListView.separated(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      itemCount: sorted.length,
+      separatorBuilder: (_, __) =>
+          const Divider(height: 1, indent: 68, endIndent: 16),
+      itemBuilder: (context, i) {
+        final entry    = sorted[i];
+        final vendorId = entry.key;
+        final label    = vendorId != null
+            ? (kVendorNames[vendorId] ?? 'Unknown (${_hexId(vendorId)})')
+            : 'Unknown';
+        return Padding(
+          padding: const EdgeInsets.only(left: 16, right: 24, top: 9, bottom: 9),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 40,
+                child: Center(child: _vendorLogo(vendorId)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(fontSize: 17, color: Colors.white),
+                ),
+              ),
+              Text(
+                '${entry.value}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 
   Widget _buildDashboardTab(List<BleDevice> devices) {
     if (devices.isEmpty) return _buildEmptyState();
@@ -705,6 +757,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       body: TabBarView(
         controller: _tabController,
         children: [
+          _buildVendorsTab(devices),
           _buildDashboardTab(devices),
           _buildDevicesTab(devices),
           _buildRawTab(devices),
@@ -713,6 +766,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       bottomNavigationBar: TabBar(
         controller: _tabController,
         tabs: const [
+          Tab(text: 'Vendors'),
           Tab(text: 'Dashboard'),
           Tab(text: 'Devices'),
           Tab(text: 'Raw Packets'),
