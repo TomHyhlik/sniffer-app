@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 void main() {
@@ -60,6 +61,10 @@ class MyApp extends StatelessWidget {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Vendor lookup
+// ---------------------------------------------------------------------------
+
 const Map<int, String> kVendorNames = {
   0x0000: 'Ericsson',
   0x0001: 'Nokia',
@@ -117,71 +122,220 @@ String vendorName(int? id) {
   return kVendorNames[id] ?? 'Unknown (${_hexId(id)})';
 }
 
-// Apple manufacturer data subtype → device label
-// Format: [subtype, length, ...data]
-String _classifyApple(List<int> bytes) {
-  if (bytes.isEmpty) return 'Apple Device';
+// ---------------------------------------------------------------------------
+// Device classification
+// ---------------------------------------------------------------------------
+
+class DeviceInfo {
+  final String label;
+  final int? vendorId;
+  const DeviceInfo(this.label, this.vendorId);
+}
+
+// Apple proximity-pairing device model codes (big-endian: bytes[2]<<8 | bytes[3])
+const Map<int, String> _appleAirPodsModels = {
+  0x0220: 'AirPods 1st Gen',
+  0x0E20: 'AirPods 2nd Gen',
+  0x1420: 'AirPods 3rd Gen',
+  0x2820: 'AirPods 4th Gen',
+  0x0F20: 'AirPods Pro',
+  0x1920: 'AirPods Pro 2nd Gen',
+  0x2420: 'AirPods Pro 2nd Gen',
+  0x1320: 'AirPods Max',
+  0x1B20: 'AirPods Max 2nd Gen',
+  0x2020: 'Beats Studio Buds',
+  0x1120: 'PowerBeats Pro',
+  0x1220: 'Beats Solo Pro',
+  0x1720: 'Beats Flex',
+  0x0320: 'Beats X',
+  0x0920: 'Beats Solo 3',
+  0x0620: 'Beats Headphones',
+};
+
+DeviceInfo _classifyApple(List<int> bytes, String name, List<String> svcUuids) {
+  if (bytes.isEmpty) return const DeviceInfo('Apple Device', 0x004C);
+
   switch (bytes[0]) {
-    case 0x02: return 'Apple iBeacon';
-    case 0x03: return 'Apple AirPrint';
-    case 0x05: return 'Apple AirDrop';
-    case 0x06: return 'Apple HomeKit';
-    case 0x07: return 'Apple AirPods';
-    case 0x08: return 'Apple Hey Siri';
-    case 0x09: return 'Apple AirPlay Target';
-    case 0x0A: return 'Apple AirPlay Source';
-    case 0x0B: return 'Apple Magic Switch';
-    case 0x0C: return 'Apple Handoff';
-    case 0x0D: return 'Apple Tethering';
-    case 0x0E: return 'Apple Nearby Action';
-    case 0x0F: return 'Apple iPhone';
-    case 0x10: return 'Apple Find My';
-    case 0x12: return 'Apple AirTag';
-    default:   return 'Apple Device';
+    case 0x02: return const DeviceInfo('Apple iBeacon', 0x004C);
+    case 0x03: return const DeviceInfo('Apple AirPrint Printer', 0x004C);
+    case 0x05: return const DeviceInfo('Apple AirDrop', 0x004C);
+    case 0x06: return const DeviceInfo('Apple HomeKit Accessory', 0x004C);
+
+    case 0x07: // Proximity pairing — AirPods / Beats
+      if (bytes.length >= 4) {
+        final model = (bytes[2] << 8) | bytes[3];
+        final label = _appleAirPodsModels[model];
+        if (label != null) return DeviceInfo(label, 0x004C);
+      }
+      return const DeviceInfo('Apple AirPods', 0x004C);
+
+    case 0x08: return const DeviceInfo('Apple Hey Siri Device', 0x004C);
+    case 0x09: return const DeviceInfo('Apple AirPlay Target', 0x004C);
+    case 0x0A: return const DeviceInfo('Apple AirPlay Source', 0x004C);
+    case 0x0B: return const DeviceInfo('Apple Magic Switch', 0x004C);
+    case 0x0C: return const DeviceInfo('Apple Handoff', 0x004C);
+    case 0x0D: return const DeviceInfo('Apple Personal Hotspot', 0x004C);
+
+    case 0x0E: // Nearby Action — sub-type byte is bytes[2]
+      if (bytes.length >= 3) {
+        switch (bytes[2]) {
+          case 0x01: return const DeviceInfo('Apple Watch Setup', 0x004C);
+          case 0x06: return const DeviceInfo('Apple TV Setup', 0x004C);
+          case 0x07: return const DeviceInfo('iPhone/iPad Setup', 0x004C);
+          case 0x0B: return const DeviceInfo('Apple Watch AutoUnlock', 0x004C);
+          case 0x0C: return const DeviceInfo('Apple Hotspot', 0x004C);
+          case 0x0D: return const DeviceInfo('Apple Join Network', 0x004C);
+          case 0x13: return const DeviceInfo('Apple Transfer', 0x004C);
+          case 0x20: return const DeviceInfo('Apple TV Colour Balance', 0x004C);
+        }
+      }
+      return const DeviceInfo('Apple Nearby Action', 0x004C);
+
+    case 0x0F: // Nearby Info — device-type nibble in status flags
+      if (bytes.length >= 3) {
+        final devType = (bytes[2] >> 4) & 0xF;
+        switch (devType) {
+          case 0x1: return const DeviceInfo('iPhone', 0x004C);
+          case 0x2: return const DeviceInfo('iPad', 0x004C);
+          case 0x3: return const DeviceInfo('MacBook', 0x004C);
+          case 0x4: return const DeviceInfo('Apple Watch', 0x004C);
+          case 0x5: return const DeviceInfo('Apple iMac', 0x004C);
+          case 0x6: return const DeviceInfo('iPod Touch', 0x004C);
+          case 0xA: return const DeviceInfo('Apple TV', 0x004C);
+          case 0xB: return const DeviceInfo('HomePod', 0x004C);
+        }
+      }
+      return const DeviceInfo('iPhone', 0x004C);
+
+    case 0x10: return const DeviceInfo('Apple Find My Device', 0x004C);
+    case 0x12: return const DeviceInfo('Apple AirTag', 0x004C);
+    default:   return const DeviceInfo('Apple Device', 0x004C);
   }
 }
 
-String _classifySamsung(List<int> bytes) {
-  if (bytes.isEmpty) return 'Samsung Device';
-  // SmartTag: data[0]==0x01, data[1]==0x00, followed by tag model byte
+DeviceInfo _classifySamsung(List<int> bytes, String name, List<String> svcUuids) {
+  final n = name.toLowerCase();
+
+  if (n.contains('smarttag') || n.contains('smart tag')) {
+    return const DeviceInfo('Samsung SmartTag', 0x0075);
+  }
+  if (n.contains('galaxy watch') || n.contains('gear')) {
+    return const DeviceInfo('Samsung Galaxy Watch', 0x0075);
+  }
+  if (n.contains('buds')) {
+    if (n.contains('pro'))  return const DeviceInfo('Samsung Galaxy Buds Pro', 0x0075);
+    if (n.contains('live')) return const DeviceInfo('Samsung Galaxy Buds Live', 0x0075);
+    if (n.contains('fe'))   return const DeviceInfo('Samsung Galaxy Buds FE', 0x0075);
+    if (n.contains('2'))    return const DeviceInfo('Samsung Galaxy Buds2', 0x0075);
+    return const DeviceInfo('Samsung Galaxy Buds', 0x0075);
+  }
+  if (n.contains('galaxy') || n.startsWith('sm-')) {
+    return const DeviceInfo('Samsung Galaxy Phone', 0x0075);
+  }
+  if (svcUuids.any((u) => u.startsWith('0000fd5a'))) {
+    return const DeviceInfo('Samsung SmartTag', 0x0075);
+  }
   if (bytes.length >= 2 && bytes[0] == 0x01 && bytes[1] == 0x00) {
-    return 'Samsung SmartTag';
+    return const DeviceInfo('Samsung SmartTag', 0x0075);
   }
-  // Galaxy Buds advertise with 0x08 prefix
-  if (bytes[0] == 0x08) return 'Samsung Galaxy Buds';
-  return 'Samsung Phone';
+  if (bytes.isNotEmpty && bytes[0] == 0x08) {
+    return const DeviceInfo('Samsung Galaxy Buds', 0x0075);
+  }
+  return const DeviceInfo('Samsung Device', 0x0075);
 }
 
-String classifyDevice(BleDevice d) {
+DeviceInfo classifyDevice(BleDevice d) {
   switch (d.vendorId) {
-    case 0x004C: return _classifyApple(d.mfDataBytes);
-    case 0x0075: return _classifySamsung(d.mfDataBytes);
-    case 0x00E0: return 'Google Device';
-    case 0x0059: return 'Nordic Dev Board';
-    case 0x0006: return 'Microsoft Device';
-    case 0x0131: return 'Fitbit';
-    case 0x0087: return 'Garmin Watch';
-    case 0x008A: return 'Polar Watch';
-    case 0x0077: return 'Bose Headphones';
-    case 0x038E: return 'Beats Headphones';
-    case 0x038F: return 'Tile Tracker';
-    case 0x0499: return 'Ruuvi Tag';
-    case 0x01D0: return 'Xiaomi Device';
-    case 0x0157: return 'Huawei Device';
-    case 0x0171: return 'Amazon Device';
-    case 0x01FF: return 'Meta Device';
-    case 0x025A: return 'Jabra Headset';
-    case 0x010F: return 'Suunto Watch';
-    case 0x0046: return 'Sony Device';
-    case 0x0077: return 'Bose Device';
-    case 0x005A: return 'ST Microelectronics';
-    case 0x089A: return 'Nothing Device';
-    case null:   return 'Unknown Device';
+    case 0x004C: return _classifyApple(d.mfDataBytes, d.name, d.serviceUuids);
+    case 0x0075: return _classifySamsung(d.mfDataBytes, d.name, d.serviceUuids);
+    case 0x00E0:
+      if (d.serviceUuids.any((u) => u.startsWith('0000fe2c') || u.startsWith('0000fe9f'))) {
+        return const DeviceInfo('Google Fast Pair Device', 0x00E0);
+      }
+      return const DeviceInfo('Google Device', 0x00E0);
+    case 0x0059: return const DeviceInfo('Nordic Dev Board', 0x0059);
+    case 0x0006: return const DeviceInfo('Microsoft Device', 0x0006);
+    case 0x0131: return const DeviceInfo('Fitbit', 0x0131);
+    case 0x0087: return const DeviceInfo('Garmin Watch', 0x0087);
+    case 0x008A: return const DeviceInfo('Polar Watch', 0x008A);
+    case 0x010F: return const DeviceInfo('Suunto Watch', 0x010F);
+    case 0x0077: return const DeviceInfo('Bose Headphones', 0x0077);
+    case 0x038E: return const DeviceInfo('Beats Headphones', 0x038E);
+    case 0x025A: return const DeviceInfo('Jabra Headset', 0x025A);
+    case 0x00E7: return const DeviceInfo('Plantronics Headset', 0x00E7);
+    case 0x038F: return const DeviceInfo('Tile Tracker', 0x038F);
+    case 0x0499: return const DeviceInfo('Ruuvi Tag', 0x0499);
+    case 0x00CD: return const DeviceInfo('iRobot', 0x00CD);
+    case 0x05A7: return const DeviceInfo('Sonos Speaker', 0x05A7);
+    case 0x01D0: return const DeviceInfo('Xiaomi Device', 0x01D0);
+    case 0x0157: return const DeviceInfo('Huawei Device', 0x0157);
+    case 0x0171: return const DeviceInfo('Amazon Device', 0x0171);
+    case 0x01FF: return const DeviceInfo('Meta VR Device', 0x01FF);
+    case 0x02D0: return const DeviceInfo('OnePlus Phone', 0x02D0);
+    case 0x0046: return const DeviceInfo('Sony Device', 0x0046);
+    case 0x089A: return const DeviceInfo('Nothing Device', 0x089A);
+    case 0x04F8: return const DeviceInfo('OPPO Device', 0x04F8);
+    case 0x076E: return const DeviceInfo('Honor Device', 0x076E);
+    case 0x0276: return const DeviceInfo('Zebra Scanner', 0x0276);
+    case 0x005A: return const DeviceInfo('ST Microelectronics', 0x005A);
+    case 0x0015: return const DeviceInfo('TI SensorTag', 0x0015);
+    case null:   return const DeviceInfo('Unknown Device', null);
     default:
       final v = kVendorNames[d.vendorId!];
-      return v != null ? '$v Device' : 'Unknown Device';
+      return v != null
+          ? DeviceInfo('$v Device', d.vendorId)
+          : const DeviceInfo('Unknown Device', null);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Company logo widget
+// ---------------------------------------------------------------------------
+
+// Vendors with a Font Awesome brand icon
+Widget _vendorLogo(int? vendorId) {
+  IconData? faIcon;
+  switch (vendorId) {
+    case 0x004C: faIcon = FontAwesomeIcons.apple; break;
+    case 0x00E0: faIcon = FontAwesomeIcons.google; break;
+    case 0x0006: faIcon = FontAwesomeIcons.microsoft; break;
+    case 0x01FF: faIcon = FontAwesomeIcons.meta; break;
+    case 0x0171: faIcon = FontAwesomeIcons.amazon; break;
+  }
+
+  if (faIcon != null) {
+    return FaIcon(faIcon, color: Colors.white, size: 22);
+  }
+
+  // All other vendors: styled monogram badge
+  final name  = vendorId != null ? (kVendorNames[vendorId] ?? '?') : '?';
+  final words = name.split(RegExp(r'[\s/]+'));
+  // Up to 2 capital initials, e.g. "Nordic Semiconductor" → "NS"
+  final mono  = words.take(2).map((w) => w.isNotEmpty ? w[0].toUpperCase() : '').join();
+
+  return Container(
+    width: 36,
+    height: 24,
+    decoration: BoxDecoration(
+      border: Border.all(color: Colors.grey.shade600, width: 1),
+      borderRadius: BorderRadius.circular(4),
+    ),
+    alignment: Alignment.center,
+    child: Text(
+      mono,
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 10,
+        fontWeight: FontWeight.bold,
+        letterSpacing: 0.5,
+      ),
+    ),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Data model
+// ---------------------------------------------------------------------------
 
 class BleDevice {
   final String id;
@@ -189,6 +343,7 @@ class BleDevice {
   int rssi;
   final int? vendorId;
   final List<int> mfDataBytes;
+  final List<String> serviceUuids;
   final String advData;
   DateTime lastSeen;
   int? periodMs;
@@ -199,10 +354,15 @@ class BleDevice {
     required this.rssi,
     required this.vendorId,
     required this.mfDataBytes,
+    required this.serviceUuids,
     required this.advData,
   })  : lastSeen = DateTime.now(),
         periodMs = null;
 }
+
+// ---------------------------------------------------------------------------
+// UI
+// ---------------------------------------------------------------------------
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -272,16 +432,18 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         if (_devices.containsKey(id)) {
           final dev = _devices[id]!;
           final now = DateTime.now();
-          final newPeriod = now.difference(dev.lastSeen).inMilliseconds;
-          dev.rssi = r.rssi;
-          dev.periodMs = newPeriod;
+          dev.periodMs = now.difference(dev.lastSeen).inMilliseconds;
           dev.lastSeen = now;
+          dev.rssi = r.rssi;
           changed = true;
         } else {
           final name = r.device.platformName.isNotEmpty
               ? r.device.platformName
               : '(unknown)';
           final mfDataBytes = mfData.isNotEmpty ? mfData.values.first : <int>[];
+          final serviceUuids = r.advertisementData.serviceUuids
+              .map((g) => g.str.toLowerCase())
+              .toList();
           final advData = mfData.isNotEmpty
               ? mfData.entries
                   .map((e) =>
@@ -294,6 +456,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             rssi: r.rssi,
             vendorId: vendorId,
             mfDataBytes: mfDataBytes,
+            serviceUuids: serviceUuids,
             advData: advData,
           );
           changed = true;
@@ -322,10 +485,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   Widget _buildDashboardTab(List<BleDevice> devices) {
     if (devices.isEmpty) return _buildEmptyState();
 
-    final counts = <String, int>{};
+    final counts    = <String, int>{};
+    final vendorIds = <String, int?>{};
     for (final d in devices) {
-      final type = classifyDevice(d);
-      counts[type] = (counts[type] ?? 0) + 1;
+      final info = classifyDevice(d);
+      counts[info.label]       = (counts[info.label] ?? 0) + 1;
+      vendorIds[info.label] ??= info.vendorId;
     }
 
     final sorted = counts.entries.toList()
@@ -334,19 +499,29 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     return ListView.separated(
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: sorted.length,
-      separatorBuilder: (_, __) => const Divider(height: 1, indent: 16, endIndent: 16),
+      separatorBuilder: (_, __) =>
+          const Divider(height: 1, indent: 68, endIndent: 16),
       itemBuilder: (context, i) {
-        final entry = sorted[i];
+        final entry    = sorted[i];
+        final vendorId = vendorIds[entry.key];
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: Row(
             children: [
+              // Company logo
+              SizedBox(
+                width: 40,
+                child: Center(child: _vendorLogo(vendorId)),
+              ),
+              const SizedBox(width: 12),
+              // Device type label
               Expanded(
                 child: Text(
                   entry.key,
                   style: const TextStyle(fontSize: 15, color: Colors.white),
                 ),
               ),
+              // Count badge
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 decoration: BoxDecoration(
