@@ -46,9 +46,9 @@ class MyApp extends StatelessWidget {
           headingTextStyle: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
-            fontSize: 18,
+            fontSize: 15,
           ),
-          dataTextStyle: const TextStyle(color: Colors.white, fontSize: 19),
+          dataTextStyle: const TextStyle(color: Colors.white, fontSize: 16),
           dividerThickness: 0.3,
         ),
         dividerColor: Colors.grey.shade900,
@@ -373,12 +373,12 @@ Widget _vendorLogo(int? vendorId) {
   }
 
   if (faIcon != null) {
-    return FaIcon(faIcon, color: Colors.white, size: 34);
+    return FaIcon(faIcon, color: Colors.white, size: 37);
   }
 
   // No vendor ID at all → generic Bluetooth icon
   if (vendorId == null) {
-    return const FaIcon(FontAwesomeIcons.bluetooth, color: Colors.white, size: 30);
+    return const FaIcon(FontAwesomeIcons.bluetooth, color: Colors.white, size: 33);
   }
 
   // Known vendor name → up to 2-letter monogram
@@ -405,7 +405,7 @@ Widget _vendorLogo(int? vendorId) {
       mono,
       style: TextStyle(
         color: Colors.white,
-        fontSize: mono.length > 2 ? 12 : 16,
+        fontSize: mono.length > 2 ? 13 : 18,
         fontWeight: FontWeight.bold,
         letterSpacing: 0.5,
       ),
@@ -585,7 +585,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         final entry    = sorted[i];
         final vendorId = vendorIds[entry.key];
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          padding: const EdgeInsets.only(left: 16, right: 24, top: 10, bottom: 10),
           child: Row(
             children: [
               // Company logo
@@ -598,23 +598,15 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               Expanded(
                 child: Text(
                   entry.key,
-                  style: const TextStyle(fontSize: 15, color: Colors.white),
+                  style: const TextStyle(fontSize: 17, color: Colors.white),
                 ),
               ),
-              // Count badge
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey.shade700),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  '${entry.value}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
+              Text(
+                '${entry.value}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
                 ),
               ),
             ],
@@ -630,14 +622,19 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     List<DataCell> Function(BleDevice) cells,
   ) {
     if (devices.isEmpty) return _buildEmptyState();
-    return SingleChildScrollView(
-      scrollDirection: Axis.vertical,
+    return InteractiveViewer(
+      constrained: false,
+      minScale: 0.5,
+      maxScale: 4.0,
       child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: DataTable(
-          columnSpacing: 16,
-          columns: columns,
-          rows: devices.map((d) => DataRow(cells: cells(d))).toList(),
+        scrollDirection: Axis.vertical,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            columnSpacing: 16,
+            columns: columns,
+            rows: devices.map((d) => DataRow(cells: cells(d))).toList(),
+          ),
         ),
       ),
     );
