@@ -46,8 +46,9 @@ class MyApp extends StatelessWidget {
           headingTextStyle: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
+            fontSize: 18,
           ),
-          dataTextStyle: const TextStyle(color: Colors.white),
+          dataTextStyle: const TextStyle(color: Colors.white, fontSize: 19),
           dividerThickness: 0.3,
         ),
         dividerColor: Colors.grey.shade900,
@@ -372,12 +373,12 @@ Widget _vendorLogo(int? vendorId) {
   }
 
   if (faIcon != null) {
-    return FaIcon(faIcon, color: Colors.white, size: 22);
+    return FaIcon(faIcon, color: Colors.white, size: 34);
   }
 
   // No vendor ID at all → generic Bluetooth icon
   if (vendorId == null) {
-    return const FaIcon(FontAwesomeIcons.bluetooth, color: Colors.white, size: 20);
+    return const FaIcon(FontAwesomeIcons.bluetooth, color: Colors.white, size: 30);
   }
 
   // Known vendor name → up to 2-letter monogram
@@ -404,7 +405,7 @@ Widget _vendorLogo(int? vendorId) {
       mono,
       style: TextStyle(
         color: Colors.white,
-        fontSize: mono.length > 2 ? 8 : 10,
+        fontSize: mono.length > 2 ? 12 : 16,
         fontWeight: FontWeight.bold,
         letterSpacing: 0.5,
       ),
