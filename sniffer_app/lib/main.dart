@@ -14,7 +14,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'BLE sniff',
+      title: 'BLE devices',
       theme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: Colors.black,
         colorScheme: const ColorScheme.dark(
@@ -735,7 +735,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('BLE sniff'),
+        title: const Text('BLE devices'),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 8),
@@ -767,9 +767,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         controller: _tabController,
         tabs: const [
           Tab(text: 'Vendors'),
-          Tab(text: 'Dashboard'),
-          Tab(text: 'Devices'),
-          Tab(text: 'Raw Packets'),
+          Tab(text: 'Types'),
+          Tab(text: 'Raw'),
+          Tab(text: 'Packets'),
         ],
       ),
     );
