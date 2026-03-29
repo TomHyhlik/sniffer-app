@@ -244,6 +244,68 @@ DeviceInfo _classifySamsung(List<int> bytes, String name, List<String> svcUuids)
   return const DeviceInfo('Samsung Device', 0x0075);
 }
 
+// Service UUID prefix → (label, vendorId)
+// Matches standard GATT services and well-known proprietary UUIDs.
+DeviceInfo? _classifyByServiceUuids(List<String> uuids) {
+  bool has(String prefix) => uuids.any((u) => u.startsWith(prefix));
+
+  // Proprietary / company services
+  if (has('0000fe2c') || has('0000fe9f')) return const DeviceInfo('Google Fast Pair Device', 0x00E0);
+  if (has('0000fd6f'))                    return const DeviceInfo('COVID Exposure Beacon', null);
+  if (has('0000feaa'))                    return const DeviceInfo('Eddystone Beacon', null);
+  if (has('0000fd5a'))                    return const DeviceInfo('Samsung SmartTag', 0x0075);
+  if (has('0000febe'))                    return const DeviceInfo('Tile Tracker', 0x038F);
+  if (has('0000fe03'))                    return const DeviceInfo('Amazon Echo', 0x0171);
+
+  // Standard GATT services (Bluetooth SIG assigned numbers)
+  if (has('00001812')) return const DeviceInfo('HID Device (keyboard/mouse/gamepad)', null);
+  if (has('0000180d')) return const DeviceInfo('Heart Rate Monitor', null);
+  if (has('00001816')) return const DeviceInfo('Cycling Speed & Cadence Sensor', null);
+  if (has('00001818')) return const DeviceInfo('Cycling Power Meter', null);
+  if (has('00001819')) return const DeviceInfo('GPS / Navigation Device', null);
+  if (has('0000181a')) return const DeviceInfo('Environmental Sensor', null);
+  if (has('0000181d')) return const DeviceInfo('Weight Scale', null);
+  if (has('0000181e')) return const DeviceInfo('Continuous Glucose Monitor', null);
+  if (has('00001826')) return const DeviceInfo('Fitness Machine', null);
+  if (has('00001808')) return const DeviceInfo('Glucose Meter', null);
+  if (has('00001809')) return const DeviceInfo('Health Thermometer', null);
+  if (has('00001810')) return const DeviceInfo('Blood Pressure Monitor', null);
+  if (has('00001822')) return const DeviceInfo('Pulse Oximeter', null);
+  if (has('0000180f')) return const DeviceInfo('BLE Peripheral (battery only)', null);
+
+  return null;
+}
+
+DeviceInfo _classifyByName(String name, int? vendorId) {
+  final n = name.toLowerCase();
+  if (n == '(unknown)' || n.isEmpty) return DeviceInfo(
+    vendorId != null ? 'Unknown (${_hexId(vendorId)})' : 'Unknown Device', vendorId);
+
+  if (n.contains('keyboard'))   return DeviceInfo('Keyboard', vendorId);
+  if (n.contains('mouse'))      return DeviceInfo('Mouse', vendorId);
+  if (n.contains('headphone') || n.contains('headset') || n.contains('earphone') || n.contains('earbuds')) {
+    return DeviceInfo('Headphones', vendorId);
+  }
+  if (n.contains('speaker'))    return DeviceInfo('Speaker', vendorId);
+  if (n.contains('watch'))      return DeviceInfo('Smartwatch', vendorId);
+  if (n.contains('band'))       return DeviceInfo('Fitness Band', vendorId);
+  if (n.contains('scale'))      return DeviceInfo('Scale', vendorId);
+  if (n.contains('beacon'))     return DeviceInfo('Beacon', vendorId);
+  if (n.contains('tracker'))    return DeviceInfo('Tracker', vendorId);
+  if (n.contains('lock'))       return DeviceInfo('Smart Lock', vendorId);
+  if (n.contains('bulb') || n.contains('light') || n.contains('lamp')) {
+    return DeviceInfo('Smart Light', vendorId);
+  }
+  if (n.contains('tv') || n.contains('television')) return DeviceInfo('Smart TV', vendorId);
+  if (n.contains('phone') || n.contains('iphone') || n.contains('android')) {
+    return DeviceInfo('Phone', vendorId);
+  }
+
+  // Has a readable name but no type matched — show name + vendor hint
+  final vendorHint = vendorId != null ? ' (${_hexId(vendorId)})' : '';
+  return DeviceInfo('$name$vendorHint', vendorId);
+}
+
 DeviceInfo classifyDevice(BleDevice d) {
   switch (d.vendorId) {
     case 0x004C: return _classifyApple(d.mfDataBytes, d.name, d.serviceUuids);
@@ -279,12 +341,18 @@ DeviceInfo classifyDevice(BleDevice d) {
     case 0x0276: return const DeviceInfo('Zebra Scanner', 0x0276);
     case 0x005A: return const DeviceInfo('ST Microelectronics', 0x005A);
     case 0x0015: return const DeviceInfo('TI SensorTag', 0x0015);
-    case null:   return const DeviceInfo('Unknown Device', null);
     default:
-      final v = kVendorNames[d.vendorId!];
-      return v != null
-          ? DeviceInfo('$v Device', d.vendorId)
-          : const DeviceInfo('Unknown Device', null);
+      // Known vendor but no specific classifier → try service UUIDs then name
+      if (d.vendorId != null) {
+        final svcMatch = _classifyByServiceUuids(d.serviceUuids);
+        if (svcMatch != null) return svcMatch;
+        final v = kVendorNames[d.vendorId!];
+        if (v != null) return DeviceInfo('$v Device', d.vendorId);
+      }
+      // No vendor ID — try service UUIDs, then name, then raw vendor hex
+      final svcMatch = _classifyByServiceUuids(d.serviceUuids);
+      if (svcMatch != null) return svcMatch;
+      return _classifyByName(d.name, d.vendorId);
   }
 }
 
@@ -307,14 +375,25 @@ Widget _vendorLogo(int? vendorId) {
     return FaIcon(faIcon, color: Colors.white, size: 22);
   }
 
-  // All other vendors: styled monogram badge
-  final name  = vendorId != null ? (kVendorNames[vendorId] ?? '?') : '?';
-  final words = name.split(RegExp(r'[\s/]+'));
-  // Up to 2 capital initials, e.g. "Nordic Semiconductor" → "NS"
-  final mono  = words.take(2).map((w) => w.isNotEmpty ? w[0].toUpperCase() : '').join();
+  // No vendor ID at all → generic Bluetooth icon
+  if (vendorId == null) {
+    return const FaIcon(FontAwesomeIcons.bluetooth, color: Colors.white, size: 20);
+  }
+
+  // Known vendor name → up to 2-letter monogram
+  // Unknown vendor ID → show hex (e.g. "3F1A")
+  final name = kVendorNames[vendorId];
+  String mono;
+  if (name != null) {
+    final words = name.split(RegExp(r'[\s/()+]+'));
+    mono = words.take(2).map((w) => w.isNotEmpty ? w[0].toUpperCase() : '').join();
+    if (mono.isEmpty) mono = name[0].toUpperCase();
+  } else {
+    mono = vendorId.toRadixString(16).toUpperCase().padLeft(4, '0');
+  }
 
   return Container(
-    width: 36,
+    width: 40,
     height: 24,
     decoration: BoxDecoration(
       border: Border.all(color: Colors.grey.shade600, width: 1),
@@ -323,9 +402,9 @@ Widget _vendorLogo(int? vendorId) {
     alignment: Alignment.center,
     child: Text(
       mono,
-      style: const TextStyle(
+      style: TextStyle(
         color: Colors.white,
-        fontSize: 10,
+        fontSize: mono.length > 2 ? 8 : 10,
         fontWeight: FontWeight.bold,
         letterSpacing: 0.5,
       ),
