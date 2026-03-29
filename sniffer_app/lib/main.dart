@@ -458,6 +458,21 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   late final TabController _tabController;
   List<BleDevice>? _sortedCache;
 
+  // Scan duration
+  static const _durationOptions = [
+    Duration(seconds: 5),
+    Duration(seconds: 10),
+    Duration(seconds: 30),
+    Duration(minutes: 1),
+    Duration(minutes: 2),
+    Duration(minutes: 5),
+  ];
+  static const _durationLabels = ['5s', '10s', '30s', '1m', '2m', '5m'];
+  Duration _scanDuration = const Duration(seconds: 30);
+  DateTime? _scanStartTime;
+  Timer? _progressTimer;
+  double _scanProgress = 0.0;
+
   @override
   void initState() {
     super.initState();
@@ -466,10 +481,66 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   @override
   void dispose() {
+    _progressTimer?.cancel();
     _tabController.dispose();
     _scanSub?.cancel();
     FlutterBluePlus.stopScan();
     super.dispose();
+  }
+
+  void _showScanDurationSettings() {
+    int selectedIdx = _durationOptions.indexOf(_scanDuration);
+    if (selectedIdx < 0) selectedIdx = 3;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          backgroundColor: const Color(0xFF1C1C1C),
+          title: const Text('Scan duration', style: TextStyle(color: Colors.white)),
+          content: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: List.generate(_durationOptions.length, (i) {
+                final sel = i == selectedIdx;
+                return GestureDetector(
+                  onTap: () => setLocal(() => selectedIdx = i),
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: sel ? Colors.white : Colors.transparent,
+                      border: Border.all(color: sel ? Colors.white : Colors.grey.shade600),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      _durationLabels[i],
+                      style: TextStyle(
+                        color: sel ? Colors.black : Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            ),
+            TextButton(
+              onPressed: () {
+                setState(() => _scanDuration = _durationOptions[selectedIdx]);
+                Navigator.pop(ctx);
+              },
+              child: const Text('OK', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   List<BleDevice> get _sortedDevices {
@@ -499,6 +570,20 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       _devices.clear();
       _sortedCache = null;
       _scanning = true;
+      _scanProgress = 0.0;
+    });
+
+    _scanStartTime = DateTime.now();
+    _progressTimer?.cancel();
+    _progressTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
+      if (!mounted) return;
+      final elapsed = DateTime.now().difference(_scanStartTime!);
+      final progress = elapsed.inMilliseconds / _scanDuration.inMilliseconds;
+      if (progress >= 1.0) {
+        _stopScan();
+      } else {
+        setState(() => _scanProgress = progress.clamp(0.0, 1.0));
+      }
     });
 
     await FlutterBluePlus.startScan(androidUsesFineLocation: false);
@@ -549,10 +634,15 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   Future<void> _stopScan() async {
+    _progressTimer?.cancel();
+    _progressTimer = null;
     await FlutterBluePlus.stopScan();
     await _scanSub?.cancel();
     _scanSub = null;
-    setState(() => _scanning = false);
+    setState(() {
+      _scanning = false;
+      _scanProgress = 0.0;
+    });
   }
 
   Widget _buildEmptyState() => Center(
@@ -735,10 +825,20 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('BLE devices'),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('BLE devices'),
+            const SizedBox(width: 10),
+            Text(
+              '${_devices.length}',
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.normal),
+            ),
+          ],
+        ),
         actions: [
           Padding(
-            padding: const EdgeInsets.only(right: 8),
+            padding: const EdgeInsets.only(right: 4),
             child: TextButton(
               onPressed: _scanning ? _stopScan : _startScan,
               style: TextButton.styleFrom(
@@ -752,7 +852,29 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               child: Text(_scanning ? 'Stop' : 'Scan'),
             ),
           ),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, color: Colors.white),
+            color: const Color(0xFF1C1C1C),
+            onSelected: (v) { if (v == 'duration') _showScanDurationSettings(); },
+            itemBuilder: (_) => [
+              const PopupMenuItem(
+                value: 'duration',
+                child: Text('Scan duration', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          ),
         ],
+        bottom: _scanning
+            ? PreferredSize(
+                preferredSize: const Size.fromHeight(3),
+                child: LinearProgressIndicator(
+                  value: _scanProgress,
+                  minHeight: 3,
+                  backgroundColor: Colors.grey.shade800,
+                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              )
+            : null,
       ),
       body: TabBarView(
         controller: _tabController,
@@ -763,14 +885,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           _buildRawTab(devices),
         ],
       ),
-      bottomNavigationBar: TabBar(
-        controller: _tabController,
-        tabs: const [
-          Tab(text: 'Vendors'),
-          Tab(text: 'Types'),
-          Tab(text: 'Raw'),
-          Tab(text: 'Packets'),
-        ],
+      bottomNavigationBar: SafeArea(
+        child: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: 'Vendors'),
+            Tab(text: 'Types'),
+            Tab(text: 'Raw'),
+            Tab(text: 'Packets'),
+          ],
+        ),
       ),
     );
   }
